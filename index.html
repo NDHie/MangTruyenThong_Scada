@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RS-485 Industrial Telemetry Dashboard | SCADA Cloud</title>
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Firebase JS SDK (Compat version for Vanilla JS) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #0a0e17;
+      --bg-card: rgba(17, 24, 39, 0.75);
+      --bg-card-hover: rgba(31, 41, 55, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(16, 185, 129, 0.3);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent-green: #10b981;
+      --accent-cyan: #06b6d4;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-blue: #3b82f6;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 25%, rgba(6, 182, 212, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(59, 130, 246, 0.06) 0%, transparent 50%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Container Layout */
+    .dashboard-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 20px 40px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Top Navigation / Header */
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 24px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+    }
+
+    .brand-logo svg {
+      width: 24px;
+      height: 24px;
+      fill: #ffffff;
+    }
+
+    .brand-text h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #ffffff 0%, #d1d5db 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: var(--accent-green);
+      font-family: var(--font-mono);
+    }
+
+    .status-badge.offline {
+      background: rgba(244, 63, 94, 0.12);
+      border-color: rgba(244, 63, 94, 0.35);
+      color: var(--accent-rose);
+    }
+
+    .status-badge.waiting {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: var(--accent-amber);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+      box-shadow: 0 0 10px currentColor;
+      animation: pulseAnim 1.8s infinite;
+    }
+
+    @keyframes pulseAnim {
+      0% { transform: scale(0.9); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.7; }
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      font-family: var(--font-sans);
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(6, 182, 212, 0.35) 100%);
+      border-color: #34d399;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-secondary {
+      background: rgba(31, 41, 55, 0.6);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(55, 65, 81, 0.8);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Configuration Panel (Collapsible) */
+    .config-panel {
+      display: none;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 16px 20px;
+      backdrop-filter: blur(12px);
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .config-panel.open {
+      display: flex;
+    }
+
+    .config-input {
+      flex: 1;
+      min-width: 280px;
+      padding: 9px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(0, 0, 0, 0.35);
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .config-input:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+    }
+
+    /* Grid Layout for Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    /* Card Component */
+    .metric-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 22px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .metric-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-glow);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, currentColor, transparent);
+      opacity: 0.6;
+    }
+
+    .card-temp { color: var(--accent-rose); }
+    .card-speed { color: var(--accent-cyan); }
+    .card-freq { color: var(--accent-green); }
+    .card-node { color: var(--accent-amber); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .card-tag {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .card-icon svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+    }
+
+    .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card-value-wrapper {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .card-value {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: #ffffff;
+      font-family: var(--font-mono);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .card-unit {
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .card-footer {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .badge-sub {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+    }
+
+    /* Main Chart Section */
+    .chart-section {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .chart-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .chart-title-group h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .chart-title-group p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .chart-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .channel-pill {
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .channel-pill.active-temp {
+      background: rgba(244, 63, 94, 0.15);
+      border-color: rgba(244, 63, 94, 0.4);
+      color: var(--accent-rose);
+    }
+
+    .channel-pill.active-speed {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: rgba(6, 182, 212, 0.4);
+      color: var(--accent-cyan);
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 380px;
+      width: 100%;
+    }
+
+    /* Live Telemetry Log Table */
+    .log-section {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .log-header h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .log-stream {
+      max-height: 180px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 6px;
+    }
+
+    .log-stream::-webkit-scrollbar {
+      width: 5px;
+    }
+    .log-stream::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 7px 12px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.25);
+      border-left: 3px solid var(--accent-green);
+    }
+
+    .log-entry.temp { border-color: var(--accent-rose); }
+    .log-entry.speed { border-color: var(--accent-cyan); }
+    .log-entry.node { border-color: var(--accent-amber); }
+
+    .log-time {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .log-content {
+      color: #e5e7eb;
+      flex: 1;
+    }
+
+    .log-badge {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+
+    /* Footer */
+    footer {
+      margin-top: auto;
+      text-align: center;
+      padding: 24px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 768px) {
+      .dashboard-container {
+        padding: 16px 12px;
+      }
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+      .chart-wrapper {
+        height: 280px;
+      }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="dashboard-container">
+    <!-- Top Header -->
+    <header>
+      <div class="brand-title">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>RS-485 INDUSTRIAL TELEMETRY DASHBOARD</h1>
+          <p>
+            <span>SCADA CLOUD GATEWAY</span>
+            <span>•</span>
+            <span id="firebaseStatusText">FIREBASE REALTIME DB</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div id="connectionBadge" class="status-badge waiting">
+          <div class="pulse-dot"></div>
+          <span id="connectionText">ĐANG KẾT NỐI FIREBASE...</span>
+        </div>
+
+        <button id="toggleConfigBtn" class="btn btn-secondary" title="Cấu hình Firebase URL">
+          ⚙ Cấu hình URL
+        </button>
+      </div>
+    </header>
+
+    <!-- Collapsible Firebase Config Panel -->
+    <div id="configPanel" class="config-panel">
+      <label style="font-size:0.85rem; font-weight:600; color:#d1d5db;">Firebase Realtime Database URL:</label>
+      <input type="text" id="firebaseUrlInput" class="config-input" 
+             value="https://mangtruyenthong-5c042-default-rtdb.asia-southeast1.firebasedatabase.app/"
+             placeholder="https://mangtruyenthong-5c042-default-rtdb.asia-southeast1.firebasedatabase.app/">
+      <button id="applyConfigBtn" class="btn btn-primary">Kết Nối Lại</button>
+    </div>
+
+    <!-- Parameter Cards (CSS Grid) -->
+    <section class="metrics-grid">
+      <!-- Card 1: Temperature (Nhiệt độ) -->
+      <article class="metric-card card-temp">
+        <div class="card-header">
+          <span class="card-tag">Trạm #1 • Cảm Biến PT100</span>
+          <div class="card-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-value-wrapper">
+            <span id="cardValTemp" class="card-value">--.-</span>
+            <span class="card-unit">°C</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Nhiệt độ cuộn dây động cơ (Holding Reg[1])</p>
+        </div>
+        <div class="card-footer">
+          <span class="badge-sub" id="tempStatusBadge">Chờ thiết bị...</span>
+          <span id="tempTime">--:--:--</span>
+        </div>
+      </article>
+
+      <!-- Card 2: Speed / RPM (Tốc độ) -->
+      <article class="metric-card card-speed">
+        <div class="card-header">
+          <span class="card-tag">Trạm #1 • Biến Tần Inverter</span>
+          <div class="card-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="2">
+              <circle cx="12" cy="12" r="9" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-value-wrapper">
+            <span id="cardValSpeed" class="card-value">----</span>
+            <span class="card-unit">RPM</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Tốc độ vòng quay trục (Holding Reg[0])</p>
+        </div>
+        <div class="card-footer">
+          <span class="badge-sub" id="speedFreqBadge">Tần số: --.- Hz</span>
+          <span id="speedTime">--:--:--</span>
+        </div>
+      </article>
+
+      <!-- Card 3: Frequency / Bus Load -->
+      <article class="metric-card card-freq">
+        <div class="card-header">
+          <span class="card-tag">Mạng RS-485 • Bus Health</span>
+          <div class="card-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-value-wrapper">
+            <span id="cardValCrc" class="card-value">--%</span>
+            <span class="card-unit">CRC OK</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Tỷ lệ gói tin Modbus RTU toàn vẹn</p>
+        </div>
+        <div class="card-footer">
+          <span class="badge-sub" id="packetCountBadge">Tổng: 0 khung</span>
+          <span>Baud: 115200 bps</span>
+        </div>
+      </article>
+
+      <!-- Card 4: Active Station Info -->
+      <article class="metric-card card-node">
+        <div class="card-header">
+          <span class="card-tag">Active Station</span>
+          <div class="card-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-value-wrapper">
+            <span id="cardValNode" class="card-value">Chờ trạm...</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Trạm phản hồi gần nhất trên đường truyền</p>
+        </div>
+        <div class="card-footer">
+          <span class="badge-sub" id="lastSyncTime">Cập nhật: --:--:--</span>
+          <span id="nodeStatusBadge">Modbus RTU</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Main Chart Section: Dynamic Rolling Live-Stream -->
+    <section class="chart-section">
+      <div class="chart-header">
+        <div class="chart-title-group">
+          <h2>
+            <svg style="width:20px; height:20px; stroke:var(--accent-cyan);" fill="none" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+            </svg>
+            GIẢN ĐỒ ĐO LƯỜNG THỜI GIAN THỰC (LIVE STREAMING OSCILLOGRAM)
+          </h2>
+          <p>Biểu đồ cuộn liên tục các thông số nhiệt độ và tốc độ bóc tách từ thanh ghi Modbus RTU</p>
+        </div>
+
+        <div class="chart-controls">
+          <div id="channelToggleTemp" class="channel-pill active-temp">● Kênh Nhiệt độ (°C)</div>
+          <div id="channelToggleSpeed" class="channel-pill active-speed">● Kênh Tốc độ (RPM)</div>
+        </div>
+      </div>
+
+      <div class="chart-wrapper">
+        <canvas id="liveTelemetryChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Real-time Event Stream / Log -->
+    <section class="log-section">
+      <div class="log-header">
+        <h3>
+          <svg style="width:16px; height:16px; stroke:var(--accent-green);" fill="none" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+          NHẬT KÝ ĐỒNG BỘ ĐÁM MÂY (FIREBASE REALTIME DB STREAM)
+        </h3>
+        <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">Path: /rs485_network/nodes</span>
+      </div>
+
+      <div id="logStream" class="log-stream">
+        <div class="log-entry">
+          <span class="log-time">--:--:--</span>
+          <span class="log-content">Hệ thống sẵn sàng. Đang kết nối Firebase và chờ dữ liệu thực tế từ phần cứng...</span>
+          <span class="log-badge">STANDBY</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div>Trường Đại học Công nghệ (VNU-UET) • Đồ án Tốt nghiệp Mạng Truyền Thông Công Nghiệp</div>
+    <div style="font-family: var(--font-mono);">Scada Cloud • RS-485 / Modbus RTU / ESP32 RMT</div>
+  </footer>
+
+  <!-- Dashboard Core Logic & Firebase Listener -->
+  <script>
+    // =========================================================================
+    // 1. CẤU HÌNH VÀ KHỞI TẠO BIỂU ĐỒ CHART.JS
+    // =========================================================================
+    const MAX_POINTS = 30; // Số điểm dữ liệu tối đa hiển thị trên trục thời gian cuộn
+    const ctx = document.getElementById('liveTelemetryChart').getContext('2d');
+
+    // Gradient màu viền cho Line Chart
+    const gradientTemp = ctx.createLinearGradient(0, 0, 0, 350);
+    gradientTemp.addColorStop(0, 'rgba(244, 63, 94, 0.4)');
+    gradientTemp.addColorStop(1, 'rgba(244, 63, 94, 0.0)');
+
+    const gradientSpeed = ctx.createLinearGradient(0, 0, 0, 350);
+    gradientSpeed.addColorStop(0, 'rgba(6, 182, 212, 0.3)');
+    gradientSpeed.addColorStop(1, 'rgba(6, 182, 212, 0.0)');
+
+    const chartConfig = {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Nhiệt độ Trạm 1 (°C)',
+            data: [],
+            borderColor: '#f43f5e',
+            backgroundColor: gradientTemp,
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#f43f5e',
+            yAxisID: 'yTemp'
+          },
+          {
+            label: 'Tốc độ Động cơ (RPM)',
+            data: [],
+            borderColor: '#06b6d4',
+            backgroundColor: gradientSpeed,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#06b6d4',
+            yAxisID: 'ySpeed'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: {
+          duration: 300
+        },
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            backgroundColor: 'rgba(17, 24, 39, 0.95)',
+            titleColor: '#f3f4f6',
+            bodyColor: '#d1d5db',
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            borderWidth: 1,
+            padding: 12,
+            titleFont: { family: 'JetBrains Mono', size: 12 },
+            bodyFont: { family: 'Inter', size: 13 }
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              color: 'rgba(255, 255, 255, 0.04)',
+              drawBorder: false
+            },
+            ticks: {
+              color: '#9ca3af',
+              font: { family: 'JetBrains Mono', size: 11 },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 10
+            }
+          },
+          yTemp: {
+            type: 'linear',
+            position: 'left',
+            min: 20,
+            max: 80,
+            grid: {
+              color: 'rgba(255, 255, 255, 0.05)',
+              drawBorder: false
+            },
+            ticks: {
+              color: '#f43f5e',
+              font: { family: 'JetBrains Mono', size: 11 },
+              callback: value => value + ' °C'
+            },
+            title: {
+              display: true,
+              text: 'Nhiệt độ (°C)',
+              color: '#f43f5e',
+              font: { family: 'Inter', size: 11, weight: '600' }
+            }
+          },
+          ySpeed: {
+            type: 'linear',
+            position: 'right',
+            min: 1300,
+            max: 1600,
+            grid: {
+              drawOnChartArea: false,
+              drawBorder: false
+            },
+            ticks: {
+              color: '#06b6d4',
+              font: { family: 'JetBrains Mono', size: 11 },
+              callback: value => value + ' RPM'
+            },
+            title: {
+              display: true,
+              text: 'Tốc độ (RPM)',
+              color: '#06b6d4',
+              font: { family: 'Inter', size: 11, weight: '600' }
+            }
+          }
+        }
+      }
+    };
+
+    const telemetryChart = new Chart(ctx, chartConfig);
+
+    // Kênh hiển thị on/off
+    const btnToggleTemp = document.getElementById('channelToggleTemp');
+    const btnToggleSpeed = document.getElementById('channelToggleSpeed');
+
+    btnToggleTemp.addEventListener('click', () => {
+      const isVisible = telemetryChart.isDatasetVisible(0);
+      telemetryChart.setDatasetVisibility(0, !isVisible);
+      btnToggleTemp.classList.toggle('active-temp', !isVisible);
+      telemetryChart.options.scales.yTemp.display = !isVisible;
+      telemetryChart.update();
+    });
+
+    btnToggleSpeed.addEventListener('click', () => {
+      const isVisible = telemetryChart.isDatasetVisible(1);
+      telemetryChart.setDatasetVisibility(1, !isVisible);
+      btnToggleSpeed.classList.toggle('active-speed', !isVisible);
+      telemetryChart.options.scales.ySpeed.display = !isVisible;
+      telemetryChart.update();
+    });
+
+    // =========================================================================
+    // 2. KHỞI TẠO FIREBASE VÀ LẮNG NGHE SỰ THAY ĐỔI DỮ LIỆU
+    // =========================================================================
+    let currentFirebaseApp = null;
+    let databaseListenerRef = null;
+    let totalFramesReceived = 0;
+
+    function initFirebase(databaseUrl) {
+      try {
+        if (databaseListenerRef) {
+          databaseListenerRef.off();
+        }
+        if (currentFirebaseApp) {
+          currentFirebaseApp.delete();
+        }
+
+        const config = {
+          databaseURL: databaseUrl.trim()
+        };
+
+        currentFirebaseApp = firebase.initializeApp(config, `app_${Date.now()}`);
+        const database = firebase.database(currentFirebaseApp);
+
+        // Lắng nghe dữ liệu theo đúng đường dẫn: /rs485_network/nodes
+        databaseListenerRef = database.ref('/rs485_network/nodes');
+
+        updateConnectionStatus('waiting', 'ĐANG ĐỢI GÓI TIN ĐẦU TIÊN...');
+        addLogEntry('Đã kết nối tới ' + databaseUrl + '. Đang subscribe /rs485_network/nodes', 'SYSTEM');
+
+        databaseListenerRef.on('value', snapshot => {
+          const data = snapshot.val();
+          if (data) {
+            updateConnectionStatus('online', 'KẾT NỐI REALTIME: ĐANG NHẬN DỮ LIỆU');
+            processIncomingNodesData(data);
+          } else {
+            updateConnectionStatus('waiting', 'FIREBASE KẾT NỐI THÀNH CÔNG (CHƯA CÓ NODE)');
+          }
+        }, error => {
+          console.warn('[Firebase] Lỗi nhận dữ liệu:', error.message);
+          updateConnectionStatus('offline', 'LỖI KẾT NỐI FIREBASE: ' + error.message);
+          addLogEntry('Cảnh báo Firebase: ' + error.message, 'ERROR');
+        });
+
+      } catch (err) {
+        console.error('[Firebase Init Error]', err);
+        updateConnectionStatus('offline', 'KHÔNG THỂ KHỞI TẠO FIREBASE');
+        addLogEntry('Lỗi cấu hình Firebase URL: ' + err.message, 'ERROR');
+      }
+    }
+
+    // =========================================================================
+    // 3. XỬ LÝ DỮ LIỆU BÓC TÁCH TỪ FIREBASE REALTIME DATABASE
+    // =========================================================================
+    function processIncomingNodesData(nodes) {
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0]; // HH:mm:ss
+      totalFramesReceived++;
+
+      document.getElementById('packetCountBadge').innerText = `Tổng: ${totalFramesReceived} khung`;
+      document.getElementById('lastSyncTime').innerText = `Cập nhật: ${timeStr}`;
+
+      let latestTemp = null;
+      let latestSpeed = null;
+
+      // Duyệt qua các node: node_1, node_2, ...
+      for (const [nodeKey, nodeData] of Object.entries(nodes)) {
+        if (!nodeData || typeof nodeData !== 'object') continue;
+
+        const nodeIdStr = nodeKey.replace('node_', '');
+        document.getElementById('cardValNode').innerText = `Node #${nodeIdStr}`;
+
+        // Kiểm tra nhiệt độ (temperature)
+        if (nodeData.temperature !== undefined) {
+          const tempVal = parseFloat(nodeData.temperature);
+          if (!isNaN(tempVal)) {
+            latestTemp = tempVal;
+            document.getElementById('cardValTemp').innerText = tempVal.toFixed(1);
+            document.getElementById('tempTime').innerText = timeStr;
+
+            const tempBadge = document.getElementById('tempStatusBadge');
+            if (tempVal > 65.0) {
+              tempBadge.innerText = 'Cảnh báo nhiệt độ cao!';
+              tempBadge.style.color = 'var(--accent-rose)';
+            } else {
+              tempBadge.innerText = 'Bình thường (< 70°C)';
+              tempBadge.style.color = 'var(--accent-green)';
+            }
+
+            addLogEntry(`Node #${nodeIdStr} -> Nhiệt độ = ${tempVal.toFixed(1)} °C`, 'temp');
+          }
+        }
+
+        // Kiểm tra tốc độ (speed)
+        if (nodeData.speed !== undefined) {
+          const speedVal = parseFloat(nodeData.speed);
+          if (!isNaN(speedVal)) {
+            latestSpeed = speedVal;
+            document.getElementById('cardValSpeed').innerText = Math.round(speedVal);
+            document.getElementById('speedTime').innerText = timeStr;
+
+            const approxHz = (speedVal / 29.0).toFixed(1);
+            document.getElementById('speedFreqBadge').innerText = `Tần số: ${approxHz} Hz`;
+
+            addLogEntry(`Node #${nodeIdStr} -> Tốc độ = ${Math.round(speedVal)} RPM (${approxHz} Hz)`, 'speed');
+          }
+        }
+      }
+
+      // Đẩy điểm dữ liệu mới vào Chart.js để biểu đồ tự động dịch chuyển trục thời gian
+      if (latestTemp !== null || latestSpeed !== null) {
+        pushChartLivePoint(timeStr, latestTemp, latestSpeed);
+      }
+    }
+
+    // =========================================================================
+    // 4. CẬP NHẬT CHART.JS - DỊCH CHUYỂN TRỤC THỜI GIAN (SLIDING WINDOW)
+    // =========================================================================
+    function pushChartLivePoint(timestamp, tempVal, speedVal) {
+      telemetryChart.data.labels.push(timestamp);
+
+      // Dataset 0: Temperature
+      const currentTemp = tempVal !== null 
+        ? tempVal 
+        : (telemetryChart.data.datasets[0].data.slice(-1)[0] ?? null);
+      telemetryChart.data.datasets[0].data.push(currentTemp);
+
+      // Dataset 1: Speed
+      const currentSpeed = speedVal !== null 
+        ? speedVal 
+        : (telemetryChart.data.datasets[1].data.slice(-1)[0] ?? null);
+      telemetryChart.data.datasets[1].data.push(currentSpeed);
+
+      // Giữ tối đa MAX_POINTS trên đồ thị để cuộn mượt mà
+      if (telemetryChart.data.labels.length > MAX_POINTS) {
+        telemetryChart.data.labels.shift();
+        telemetryChart.data.datasets[0].data.shift();
+        telemetryChart.data.datasets[1].data.shift();
+      }
+
+      telemetryChart.update('none'); // Update mượt mà không bị flicker
+    }
+
+    // =========================================================================
+    // 5. TIỆN ÍCH GIAO DIỆN & NHẬT KÝ (LOG STREAM)
+    // =========================================================================
+    function updateConnectionStatus(state, message) {
+      const badge = document.getElementById('connectionBadge');
+      const text = document.getElementById('connectionText');
+      badge.className = 'status-badge ' + (state === 'online' ? '' : (state === 'offline' ? 'offline' : 'waiting'));
+      text.innerText = message;
+    }
+
+    function addLogEntry(content, type = 'default') {
+      const logStream = document.getElementById('logStream');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+
+      const time = new Date().toTimeString().split(' ')[0];
+      entry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-content">${content}</span>
+        <span class="log-badge">${type.toUpperCase()}</span>
+      `;
+
+      logStream.insertBefore(entry, logStream.firstChild);
+
+      // Giới hạn 50 dòng log trong bộ đệm
+      if (logStream.children.length > 50) {
+        logStream.removeChild(logStream.lastChild);
+      }
+    }
+
+    // Cấu hình URL toggle
+    const toggleConfigBtn = document.getElementById('toggleConfigBtn');
+    const configPanel = document.getElementById('configPanel');
+    const firebaseUrlInput = document.getElementById('firebaseUrlInput');
+    const applyConfigBtn = document.getElementById('applyConfigBtn');
+
+    toggleConfigBtn.addEventListener('click', () => {
+      configPanel.classList.toggle('open');
+    });
+
+    applyConfigBtn.addEventListener('click', () => {
+      const newUrl = firebaseUrlInput.value.trim();
+      if (newUrl) {
+        initFirebase(newUrl);
+        configPanel.classList.remove('open');
+      }
+    });
+
+    // =========================================================================
+    // 6. KHỞI ĐỘNG VÀ KẾT NỐI DỮ LIỆU THỰC TẾ
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      const initialUrl = firebaseUrlInput.value;
+      initFirebase(initialUrl);
+    });
+  </script>
+</body>
+</html>
